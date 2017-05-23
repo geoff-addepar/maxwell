@@ -20,7 +20,7 @@ public class AbstractReplicatorTest extends MaxwellTestWithIsolatedServer {
 
 	@Test
 	public void testStopsAfterTargetHeartbeatReceived() throws Exception {
-		TestReplicator replicator = new TestReplicator(buildContext());
+		TestReplicator replicator = new TestReplicator();
 		replicator.stopAtHeartbeat(2L);
 
 		replicator.processRow(heartbeatRow(1L));

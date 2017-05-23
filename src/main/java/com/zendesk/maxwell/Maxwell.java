@@ -24,10 +24,6 @@ import java.sql.Connection;
 import java.sql.SQLException;
 
 public class Maxwell implements Runnable {
-	static {
-		Logging.setupLogBridging();
-	}
-
 	protected MaxwellConfig config;
 	protected MaxwellContext context;
 	protected Replicator replicator;
@@ -64,7 +60,8 @@ public class Maxwell implements Runnable {
 				this.context.getReplicationConnectionPool(),
 				this.context.getCaseSensitivity(),
 				recoveryInfo,
-				this.config.shykoMode
+				this.config.shykoMode,
+				this.context.getMaxwellMetrics()
 			);
 
 			recoveredPosition = masterRecovery.recover();
@@ -133,7 +130,6 @@ public class Maxwell implements Runnable {
 
 	protected void onReplicatorStart() {}
 	private void start() throws Exception {
-		MaxwellMetrics.setup(config, context);
 		try {
 			startInner();
 		} catch ( Exception e) {
@@ -190,23 +186,21 @@ public class Maxwell implements Runnable {
 		// Dropwizard throws an exception if you try to register multiple metrics with the same name.
 		// Since there are codepaths that create multiple replicators (at least in the tests) we need to protect
 		// against that.
-		String lagGaugeName = MetricRegistry.name(MaxwellMetrics.getMetricsPrefix(), "replication", "lag");
-		if ( !(MaxwellMetrics.metricRegistry.getGauges().containsKey(lagGaugeName)) ) {
-			MaxwellMetrics.metricRegistry.register(
-					lagGaugeName,
-					new Gauge<Long>() {
-						@Override
-						public Long getValue() {
-							return replicator.getReplicationLag();
-						}
+		context.getMaxwellMetrics().gauge(
+				new Gauge<Long>() {
+					@Override
+					public Long getValue() {
+						return replicator.getReplicationLag();
 					}
-			);
-		}
+				},
+				"replication", "lag"
+		);
 
 		replicator.runLoop();
 	}
 
 	public static void main(String[] args) {
+		Logging.setupLogBridging();
 		try {
 			MaxwellConfig config = new MaxwellConfig(args);
 

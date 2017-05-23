@@ -11,8 +11,7 @@ public class FileProducer extends AbstractProducer {
 	private final File file;
 	private final FileWriter fileWriter;
 
-	public FileProducer(MaxwellContext context, String filename) throws IOException {
-		super(context);
+	public FileProducer(String filename) throws IOException {
 		this.file = new File(filename);
 		this.fileWriter = new FileWriter(this.file, true);
 	}

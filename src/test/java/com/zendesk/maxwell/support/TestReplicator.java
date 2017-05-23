@@ -1,7 +1,6 @@
 package com.zendesk.maxwell.support;
 
-import com.zendesk.maxwell.MaxwellContext;
-import com.zendesk.maxwell.producer.AbstractProducer;
+import com.zendesk.maxwell.metrics.MaxwellMetrics;
 import com.zendesk.maxwell.producer.BufferedProducer;
 import com.zendesk.maxwell.replication.AbstractReplicator;
 import com.zendesk.maxwell.row.RowMap;
@@ -11,8 +10,8 @@ import com.zendesk.maxwell.util.RunState;
 
 public class TestReplicator extends AbstractReplicator {
 
-	public TestReplicator(MaxwellContext context) {
-		super(null, null, null, new BufferedProducer(context, 10), null);
+	public TestReplicator() {
+		super(null, null, null, new BufferedProducer(10), null, new MaxwellMetrics());
 	}
 
 	public BufferedProducer getProducer() {

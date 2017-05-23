@@ -2,12 +2,12 @@ package com.zendesk.maxwell.producer;
 
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.Meter;
-import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
+import com.codahale.metrics.health.HealthCheck;
+import com.zendesk.maxwell.MaxwellConfig;
 import com.zendesk.maxwell.MaxwellContext;
 import com.zendesk.maxwell.metrics.MaxwellMetrics;
 import com.zendesk.maxwell.producer.partitioners.MaxwellKafkaPartitioner;
-import com.zendesk.maxwell.replication.BinlogPosition;
 import com.zendesk.maxwell.replication.Position;
 import com.zendesk.maxwell.row.RowMap;
 import com.zendesk.maxwell.row.RowMap.KeyFormat;
@@ -95,10 +95,9 @@ public class MaxwellKafkaProducer extends AbstractProducer {
 	private final ArrayBlockingQueue<RowMap> queue;
 	private final MaxwellKafkaProducerWorker worker;
 
-	public MaxwellKafkaProducer(MaxwellContext context, Properties kafkaProperties, String kafkaTopic) {
-		super(context);
+	public MaxwellKafkaProducer(Properties kafkaProperties, String kafkaTopic, MaxwellConfig config, MaxwellMetrics maxwellMetrics) {
 		this.queue = new ArrayBlockingQueue<>(100);
-		this.worker = new MaxwellKafkaProducerWorker(context, kafkaProperties, kafkaTopic, this.queue);
+		this.worker = new MaxwellKafkaProducerWorker(kafkaProperties, kafkaTopic, this.queue, config, maxwellMetrics);
 		Thread thread = new Thread(this.worker, "maxwell-kafka-worker");
 		thread.setDaemon(true);
 		thread.start();
@@ -113,6 +112,12 @@ public class MaxwellKafkaProducer extends AbstractProducer {
 	public StoppableTask getStoppableTask() {
 		return this.worker;
 	}
+
+	@Override
+	public void setContext(MaxwellContext context) {
+		super.setContext(context);
+		worker.setContext(context);
+	}
 }
 
 class MaxwellKafkaProducerWorker extends AbstractAsyncProducer implements Runnable, StoppableTask {
@@ -125,19 +130,17 @@ class MaxwellKafkaProducerWorker extends AbstractAsyncProducer implements Runnab
 	private final MaxwellKafkaPartitioner ddlPartitioner;
 	private final KeyFormat keyFormat;
 	private final boolean interpolateTopic;
-	private final Timer metricsTimer;
 	private final ArrayBlockingQueue<RowMap> queue;
 	private Thread thread;
 	private StoppableTaskState taskState;
 
-	private final Counter succeededMessageCount = MaxwellMetrics.metricRegistry.counter(succeededMessageCountName);
-	private final Meter succeededMessageMeter = MaxwellMetrics.metricRegistry.meter(succeededMessageMeterName);
-	private final Counter failedMessageCount = MaxwellMetrics.metricRegistry.counter(failedMessageCountName);
-	private final Meter failedMessageMeter = MaxwellMetrics.metricRegistry.meter(failedMessageMeterName);
+	private final Timer metricsTimer;
+	private final Counter succeededMessageCount;
+	private final Meter succeededMessageMeter;
+	private final Counter failedMessageCount;
+	private final Meter failedMessageMeter;
 
-	public MaxwellKafkaProducerWorker(MaxwellContext context, Properties kafkaProperties, String kafkaTopic, ArrayBlockingQueue<RowMap> queue) {
-		super(context);
-
+	public MaxwellKafkaProducerWorker(Properties kafkaProperties, String kafkaTopic, ArrayBlockingQueue<RowMap> queue, MaxwellConfig config, MaxwellMetrics maxwellMetrics) {
 		this.topic = kafkaTopic;
 		if ( this.topic == null ) {
 			this.topic = "maxwell";
@@ -146,20 +149,34 @@ class MaxwellKafkaProducerWorker extends AbstractAsyncProducer implements Runnab
 		this.interpolateTopic = this.topic.contains("%{");
 		this.kafka = new KafkaProducer<>(kafkaProperties, new StringSerializer(), new StringSerializer());
 
-		String hash = context.getConfig().kafkaPartitionHash;
-		String partitionKey = context.getConfig().producerPartitionKey;
-		String partitionColumns = context.getConfig().producerPartitionColumns;
-		String partitionFallback = context.getConfig().producerPartitionFallback;
+		String hash = config.kafkaPartitionHash;
+		String partitionKey = config.producerPartitionKey;
+		String partitionColumns = config.producerPartitionColumns;
+		String partitionFallback = config.producerPartitionFallback;
 		this.partitioner = new MaxwellKafkaPartitioner(hash, partitionKey, partitionColumns, partitionFallback);
 		this.ddlPartitioner = new MaxwellKafkaPartitioner(hash, "database", null,"database");
-		this.ddlTopic =  context.getConfig().ddlKafkaTopic;
+		this.ddlTopic =  config.ddlKafkaTopic;
 
-		if ( context.getConfig().kafkaKeyFormat.equals("hash") )
+		if ( config.kafkaKeyFormat.equals("hash") )
 			keyFormat = KeyFormat.HASH;
 		else
 			keyFormat = KeyFormat.ARRAY;
 
-		this.metricsTimer = MaxwellMetrics.metricRegistry.timer(MetricRegistry.name(MaxwellMetrics.getMetricsPrefix(), "time", "overall"));
+		this.metricsTimer = maxwellMetrics.timer("time", "overall");
+		this.succeededMessageCount = maxwellMetrics.counter(succeededMessageCountName);
+		this.succeededMessageMeter = maxwellMetrics.meter(succeededMessageMeterName);
+		this.failedMessageCount = maxwellMetrics.counter(failedMessageCountName);
+		this.failedMessageMeter = maxwellMetrics.meter(failedMessageMeterName);
+		maxwellMetrics.healthCheck("MaxwellHealth", new HealthCheck() {
+			@Override
+			protected Result check() throws Exception {
+				if ( failedMessageCount.getCount() > 0 )
+					return Result.unhealthy("%d messages failed to be sent to Kafka", failedMessageCount.getCount());
+				else
+					return Result.healthy();
+			}
+		});
+
 		this.queue = queue;
 		this.taskState = new StoppableTaskState("MaxwellKafkaProducerWorker");
 	}

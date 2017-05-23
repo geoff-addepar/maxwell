@@ -1,30 +1,29 @@
 package com.zendesk.maxwell;
 
-import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DatabaseMetaData;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-
-import com.zendesk.maxwell.replication.BinlogPosition;
 import com.zendesk.maxwell.bootstrap.AbstractBootstrapper;
 import com.zendesk.maxwell.bootstrap.AsynchronousBootstrapper;
 import com.zendesk.maxwell.bootstrap.NoOpBootstrapper;
 import com.zendesk.maxwell.bootstrap.SynchronousBootstrapper;
+import com.zendesk.maxwell.metrics.MaxwellMetrics;
 import com.zendesk.maxwell.producer.*;
 import com.zendesk.maxwell.recovery.RecoveryInfo;
 import com.zendesk.maxwell.replication.Position;
 import com.zendesk.maxwell.replication.Replicator;
 import com.zendesk.maxwell.row.RowMap;
-import com.zendesk.maxwell.schema.ReadOnlyMysqlPositionStore;
 import com.zendesk.maxwell.schema.MysqlPositionStore;
 import com.zendesk.maxwell.schema.PositionStoreThread;
-
+import com.zendesk.maxwell.schema.ReadOnlyMysqlPositionStore;
 import com.zendesk.maxwell.util.StoppableTask;
 import com.zendesk.maxwell.util.TaskManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import snaq.db.ConnectionPool;
+
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 public class MaxwellContext {
 	static final Logger LOGGER = LoggerFactory.getLogger(MaxwellContext.class);
@@ -34,6 +33,7 @@ public class MaxwellContext {
 	private final ConnectionPool rawMaxwellConnectionPool;
 	private final ConnectionPool schemaConnectionPool;
 	private final MaxwellConfig config;
+	private final MaxwellMetrics maxwellMetrics;
 	private MysqlPositionStore positionStore;
 	private PositionStoreThread positionStoreThread;
 	private Long serverID;
@@ -68,10 +68,10 @@ public class MaxwellContext {
 		}
 
 		this.rawMaxwellConnectionPool = new ConnectionPool("RawMaxwellConnectionPool", 1, 2, 100,
-			config.maxwellMysql.getConnectionURI(false), config.maxwellMysql.user, config.maxwellMysql.password);
+				config.maxwellMysql.getConnectionURI(false), config.maxwellMysql.user, config.maxwellMysql.password);
 
 		this.maxwellConnectionPool = new ConnectionPool("MaxwellConnectionPool", 10, 0, 10,
-					config.maxwellMysql.getConnectionURI(), config.maxwellMysql.user, config.maxwellMysql.password);
+				config.maxwellMysql.getConnectionURI(), config.maxwellMysql.user, config.maxwellMysql.password);
 		this.maxwellConnectionPool.setCaching(false);
 
 		if ( this.config.initPosition != null )
@@ -82,6 +82,8 @@ public class MaxwellContext {
 		} else {
 			this.positionStore = new MysqlPositionStore(this.getMaxwellConnectionPool(), this.getServerID(), this.config.clientID, config.gtidMode);
 		}
+
+		this.maxwellMetrics = MaxwellMetrics.fromConfig(this.config, taskManager);
 	}
 
 	public MaxwellConfig getConfig() {
@@ -262,34 +264,39 @@ public class MaxwellContext {
 		if ( this.producer != null )
 			return this.producer;
 
-		switch ( this.config.producerType ) {
-		case "file":
-			this.producer = new FileProducer(this, this.config.outputFile);
-			break;
-		case "kafka":
-			this.producer = new MaxwellKafkaProducer(this, this.config.getKafkaProperties(), this.config.kafkaTopic);
-			break;
-		case "kinesis":
-			this.producer = new MaxwellKinesisProducer(this, this.config.kinesisStream);
-			break;
-		case "profiler":
-			this.producer = new ProfilerProducer(this);
-			break;
-		case "stdout":
-			this.producer = new StdoutProducer(this);
-			break;
-		case "buffer":
-			this.producer = new BufferedProducer(this, this.config.bufferedProducerSize);
-			break;
-		case "none":
-			this.producer = null;
-			break;
-		default:
-			throw new RuntimeException("Unknown producer type: " + this.config.producerType);
+		if ( this.config.producer != null) {
+			this.producer = this.config.producer;
+		} else {
+			switch ( this.config.producerType ) {
+			case "file":
+				this.producer = new FileProducer(this.config.outputFile);
+				break;
+			case "kafka":
+				this.producer = new MaxwellKafkaProducer(this.config.getKafkaProperties(), this.config.kafkaTopic, this.config, this.maxwellMetrics);
+				break;
+			case "kinesis":
+				this.producer = new MaxwellKinesisProducer(this.config.kinesisStream);
+				break;
+			case "profiler":
+				this.producer = new ProfilerProducer();
+				break;
+			case "stdout":
+				this.producer = new StdoutProducer();
+				break;
+			case "buffer":
+				this.producer = new BufferedProducer(this.config.bufferedProducerSize);
+				break;
+			case "none":
+				this.producer = null;
+				break;
+			default:
+				throw new RuntimeException("Unknown producer type: " + this.config.producerType);
+			}
 		}
 
 		StoppableTask task = null;
 		if (producer != null) {
+			producer.setContext(this);
 			task = producer.getStoppableTask();
 		}
 		if (task != null) {
@@ -337,5 +344,9 @@ public class MaxwellContext {
 	public void setReplicator(Replicator replicator) {
 		this.addTask(replicator);
 		this.replicator = replicator;
+	}
+
+	public MaxwellMetrics getMaxwellMetrics() {
+		return maxwellMetrics;
 	}
 }

@@ -2,7 +2,6 @@ package com.zendesk.maxwell.replication;
 
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.Meter;
-import com.codahale.metrics.MetricRegistry;
 import com.zendesk.maxwell.metrics.MaxwellMetrics;
 import com.zendesk.maxwell.MaxwellFilter;
 import com.zendesk.maxwell.bootstrap.AbstractBootstrapper;
@@ -31,22 +30,27 @@ public abstract class AbstractReplicator extends RunLoopProcess implements Repli
 	protected Long stopAtHeartbeat;
 	protected MaxwellFilter filter;
 
-	private final Counter rowCounter = MaxwellMetrics.metricRegistry.counter(
-		MetricRegistry.name(MaxwellMetrics.getMetricsPrefix(), "row", "count")
-	);
-
-	private final Meter rowMeter = MaxwellMetrics.metricRegistry.meter(
-		MetricRegistry.name(MaxwellMetrics.getMetricsPrefix(), "row", "meter")
-	);
+	private final Counter rowCounter;
+	private final Meter rowMeter;
 
 	protected Long replicationLag = 0L;
 
-	public AbstractReplicator(String clientID, AbstractBootstrapper bootstrapper, String maxwellSchemaDatabaseName, AbstractProducer producer, Position initialPosition) {
+	public AbstractReplicator(
+		String clientID,
+		AbstractBootstrapper bootstrapper,
+		String maxwellSchemaDatabaseName,
+		AbstractProducer producer,
+		Position initialPosition,
+		MaxwellMetrics maxwellMetrics
+	) {
 		this.clientID = clientID;
 		this.bootstrapper = bootstrapper;
 		this.maxwellSchemaDatabaseName = maxwellSchemaDatabaseName;
 		this.producer = producer;
 		this.lastHeartbeatPosition = initialPosition;
+
+		this.rowCounter = maxwellMetrics.counter("row", "count");
+		this.rowMeter = maxwellMetrics.meter("row", "meter");
 	}
 
 	/**

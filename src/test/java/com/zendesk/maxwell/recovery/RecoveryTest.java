@@ -102,7 +102,8 @@ public class RecoveryTest extends TestWithNameLogging {
 			slaveContext.getReplicationConnectionPool(),
 			slaveContext.getCaseSensitivity(),
 			recoveryInfo,
-			System.getenv("SHYKO_MODE") != null
+			System.getenv("SHYKO_MODE") != null,
+			slaveContext.getMaxwellMetrics()
 		);
 
 		Position recoveredPosition = recovery.recover();
@@ -144,7 +145,8 @@ public class RecoveryTest extends TestWithNameLogging {
 			slaveContext.getReplicationConnectionPool(),
 			slaveContext.getCaseSensitivity(),
 			recoveryInfo,
-			System.getenv("SHYKO_MODE") != null
+			System.getenv("SHYKO_MODE") != null,
+			slaveContext.getMaxwellMetrics()
 		);
 
 		Position recoveredPosition = recovery.recover();

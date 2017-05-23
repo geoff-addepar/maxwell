@@ -1,18 +1,24 @@
 package com.zendesk.maxwell;
 
-import java.util.*;
-import java.util.regex.Pattern;
-
-import com.zendesk.maxwell.replication.BinlogPosition;
+import com.zendesk.maxwell.metrics.MaxwellMetrics;
+import com.zendesk.maxwell.producer.AbstractProducer;
 import com.zendesk.maxwell.producer.MaxwellOutputConfig;
+import com.zendesk.maxwell.replication.BinlogPosition;
 import com.zendesk.maxwell.replication.Position;
-import joptsimple.*;
-
+import com.zendesk.maxwell.util.AbstractConfig;
+import joptsimple.BuiltinHelpFormatter;
+import joptsimple.OptionDescriptor;
+import joptsimple.OptionParser;
+import joptsimple.OptionSet;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.zendesk.maxwell.util.AbstractConfig;
+import java.util.Enumeration;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+import java.util.regex.Pattern;
 
 public class MaxwellConfig extends AbstractConfig {
 	static final Logger LOGGER = LoggerFactory.getLogger(MaxwellConfig.class);
@@ -31,11 +37,13 @@ public class MaxwellConfig extends AbstractConfig {
 
 	public String includeDatabases, excludeDatabases, includeTables, excludeTables, excludeColumns, blacklistDatabases, blacklistTables;
 
+	public AbstractProducer producer; // producer has precedence over producerType
+	public String producerType;
+
 	public final Properties kafkaProperties;
 	public String kafkaTopic;
 	public String ddlKafkaTopic;
 	public String kafkaKeyFormat;
-	public String producerType;
 	public String kafkaPartitionHash;
 	public String kafkaPartitionKey;
 	public String kafkaPartitionColumns;
@@ -53,6 +61,8 @@ public class MaxwellConfig extends AbstractConfig {
 	public String outputFile;
 	public MaxwellOutputConfig outputConfig;
 	public String log_level;
+
+	public MaxwellMetrics maxwellMetrics;
 
 	public String metricsPrefix;
 	public String metricsReportingType;

@@ -8,6 +8,7 @@ import com.google.code.or.net.TransportException;
 import com.zendesk.maxwell.MaxwellContext;
 import com.zendesk.maxwell.MaxwellMysqlConfig;
 import com.zendesk.maxwell.bootstrap.AbstractBootstrapper;
+import com.zendesk.maxwell.metrics.MaxwellMetrics;
 import com.zendesk.maxwell.producer.AbstractProducer;
 import com.zendesk.maxwell.row.RowMap;
 import com.zendesk.maxwell.row.RowMapBuffer;
@@ -46,9 +47,10 @@ public class MaxwellReplicator extends AbstractReplicator implements Replicator 
 		String maxwellSchemaDatabaseName,
 		Position start,
 		boolean stopOnEOF,
-		String clientID
+		String clientID,
+		MaxwellMetrics maxwellMetrics
 	) {
-		super(clientID, bootstrapper, maxwellSchemaDatabaseName, producer, start);
+		super(clientID, bootstrapper, maxwellSchemaDatabaseName, producer, start, maxwellMetrics);
 		this.schemaStore = schemaStore;
 		this.binlogEventListener = new BinlogEventListener(queue);
 
@@ -84,7 +86,8 @@ public class MaxwellReplicator extends AbstractReplicator implements Replicator 
 			ctx.getConfig().databaseName,
 			start,
 			false,
-			ctx.getConfig().clientID
+			ctx.getConfig().clientID,
+			ctx.getMaxwellMetrics()
 		);
 	}
 

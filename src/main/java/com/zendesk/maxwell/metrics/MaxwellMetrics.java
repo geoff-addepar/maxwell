@@ -1,11 +1,10 @@
 package com.zendesk.maxwell.metrics;
 
-import com.codahale.metrics.JmxReporter;
-import com.codahale.metrics.MetricRegistry;
-import com.codahale.metrics.Slf4jReporter;
+import com.codahale.metrics.*;
+import com.codahale.metrics.health.HealthCheck;
 import com.codahale.metrics.health.HealthCheckRegistry;
 import com.zendesk.maxwell.MaxwellConfig;
-import com.zendesk.maxwell.MaxwellContext;
+import com.zendesk.maxwell.util.TaskManager;
 import org.apache.commons.lang.StringUtils;
 import org.coursera.metrics.datadog.DatadogReporter;
 import org.coursera.metrics.datadog.transport.HttpTransport;
@@ -21,25 +20,41 @@ import java.util.concurrent.TimeUnit;
 import static org.coursera.metrics.datadog.DatadogReporter.Expansion.*;
 
 public class MaxwellMetrics {
-	public static final MetricRegistry metricRegistry = new MetricRegistry();
-	public static final HealthCheckRegistry healthCheckRegistry = new HealthCheckRegistry();
+	private static final String reportingTypeSlf4j = "slf4j";
+	private static final String reportingTypeJmx = "jmx";
+	private static final String reportingTypeHttp = "http";
+	private static final String reportingTypeDataDog = "datadog";
 
-	public static final String reportingTypeSlf4j = "slf4j";
-	public static final String reportingTypeJmx = "jmx";
-	public static final String reportingTypeHttp = "http";
-	public static final String reportingTypeDataDog = "datadog";
+	private static final Logger LOGGER = LoggerFactory.getLogger(MaxwellMetrics.class);
 
-	static final Logger LOGGER = LoggerFactory.getLogger(MaxwellMetrics.class);
+	private final MetricRegistry metricRegistry;
+	private final HealthCheckRegistry healthCheckRegistry;
 
-	private static String metricsPrefix;
+	private final String metricsPrefix;
 
-	public static void setup(MaxwellConfig config, MaxwellContext context) {
-		if (config.metricsReportingType == null) {
-			LOGGER.warn("Metrics will not be exposed: metricsReportingType not configured.");
-			return;
+	public MaxwellMetrics() {
+		this(new MetricRegistry(), new HealthCheckRegistry(), "MaxwellMetrics");
+	}
+
+	public MaxwellMetrics(MetricRegistry metricRegistry, HealthCheckRegistry healthCheckRegistry, String metricsPrefix) {
+		this.metricRegistry = metricRegistry;
+		this.healthCheckRegistry = healthCheckRegistry;
+		this.metricsPrefix = metricsPrefix;
+	}
+
+	public static MaxwellMetrics fromConfig(MaxwellConfig config, TaskManager taskManager) {
+		if (config.maxwellMetrics != null) {
+			return config.maxwellMetrics;
 		}
 
-		metricsPrefix = config.metricsPrefix;
+		String metricsPrefix = config.metricsPrefix;
+		MetricRegistry metricRegistry = new MetricRegistry();
+		HealthCheckRegistry healthCheckRegistry = new HealthCheckRegistry();
+
+		if (config.metricsReportingType == null) {
+			LOGGER.warn("Metrics will not be exposed: metricsReportingType not configured.");
+			return new MaxwellMetrics(metricRegistry, healthCheckRegistry, metricsPrefix);
+		}
 
 		if (config.metricsReportingType.contains(reportingTypeSlf4j)) {
 			final Slf4jReporter reporter = Slf4jReporter.forRegistry(metricRegistry)
@@ -71,10 +86,8 @@ public class MaxwellMetrics {
 		}
 
 		if (config.metricsReportingType.contains(reportingTypeHttp)) {
-			healthCheckRegistry.register("MaxwellHealth", new MaxwellHealthCheck(metricRegistry));
-
 			LOGGER.info("Metrics http server starting");
-			new MaxwellHTTPServer(config.metricsHTTPPort, MaxwellMetrics.metricRegistry, healthCheckRegistry, context);
+			new MaxwellHTTPServer(config.metricsHTTPPort, metricRegistry, healthCheckRegistry, taskManager);
 			LOGGER.info("Metrics http server started on port " + config.metricsHTTPPort);
 		}
 
@@ -103,6 +116,8 @@ public class MaxwellMetrics {
 			reporter.start(config.metricsDatadogInterval, TimeUnit.SECONDS);
 			LOGGER.info("Datadog reporting enabled");
 		}
+
+		return new MaxwellMetrics(metricRegistry, healthCheckRegistry, metricsPrefix);
 	}
 
 	private static ArrayList<String> getDatadogTags(String datadogTags) {
@@ -116,7 +131,23 @@ public class MaxwellMetrics {
 		return tags;
 	}
 
-	public static String getMetricsPrefix() {
-		return metricsPrefix;
+	public Timer timer(String... names) {
+		return metricRegistry.timer(MetricRegistry.name(metricsPrefix, names));
+	}
+
+	public Counter counter(String... names) {
+		return metricRegistry.counter(MetricRegistry.name(metricsPrefix, names));
+	}
+
+	public Meter meter(String... names) {
+		return metricRegistry.meter(MetricRegistry.name(metricsPrefix, names));
+	}
+
+	public void gauge(Gauge<?> gauge, String... names) {
+		metricRegistry.register(MetricRegistry.name(metricsPrefix, names), gauge);
+	}
+
+	public void healthCheck(String name, HealthCheck healthCheck) {
+		healthCheckRegistry.register(name, healthCheck);
 	}
 }

@@ -1,6 +1,7 @@
 package com.zendesk.maxwell.recovery;
 
 import com.zendesk.maxwell.*;
+import com.zendesk.maxwell.metrics.MaxwellMetrics;
 import com.zendesk.maxwell.replication.BinlogConnectorReplicator;
 import com.zendesk.maxwell.replication.BinlogPosition;
 import com.zendesk.maxwell.replication.MaxwellReplicator;
@@ -28,19 +29,22 @@ public class Recovery {
 	private final String maxwellDatabaseName;
 	private final RecoverySchemaStore schemaStore;
 	private final boolean shykoMode;
+	private final MaxwellMetrics maxwellMetrics;
 
 	public Recovery(MaxwellMysqlConfig replicationConfig,
 					String maxwellDatabaseName,
 					ConnectionPool replicationConnectionPool,
 					CaseSensitivity caseSensitivity,
 					RecoveryInfo recoveryInfo,
-					boolean shykoMode) {
+					boolean shykoMode,
+					MaxwellMetrics maxwellMetrics) {
 		this.replicationConfig = replicationConfig;
 		this.replicationConnectionPool = replicationConnectionPool;
 		this.recoveryInfo = recoveryInfo;
 		this.schemaStore = new RecoverySchemaStore(replicationConnectionPool, maxwellDatabaseName, caseSensitivity);
 		this.maxwellDatabaseName = maxwellDatabaseName;
 		this.shykoMode = shykoMode;
+		this.maxwellMetrics = maxwellMetrics;
 	}
 
 	public Position recover() throws Exception {
@@ -69,7 +73,8 @@ public class Recovery {
 						maxwellDatabaseName,
 						position,
 						true,
-						recoveryInfo.clientID
+						recoveryInfo.clientID,
+						maxwellMetrics
 						);
 			} else {
 				replicator = new MaxwellReplicator(
@@ -82,7 +87,8 @@ public class Recovery {
 						maxwellDatabaseName,
 						position,
 						true,
-						recoveryInfo.clientID
+						recoveryInfo.clientID,
+						maxwellMetrics
 						);
 			}
 

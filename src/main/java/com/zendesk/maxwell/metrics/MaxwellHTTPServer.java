@@ -5,8 +5,8 @@ import com.codahale.metrics.health.HealthCheckRegistry;
 import com.codahale.metrics.servlets.HealthCheckServlet;
 import com.codahale.metrics.servlets.MetricsServlet;
 import com.codahale.metrics.servlets.PingServlet;
-import com.zendesk.maxwell.MaxwellContext;
 import com.zendesk.maxwell.util.StoppableTask;
+import com.zendesk.maxwell.util.TaskManager;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
@@ -15,11 +15,11 @@ import java.util.concurrent.TimeoutException;
 
 
 public class MaxwellHTTPServer {
-	public MaxwellHTTPServer(int port, MetricRegistry metricRegistry, HealthCheckRegistry healthCheckRegistry, MaxwellContext context) {
+	public MaxwellHTTPServer(int port, MetricRegistry metricRegistry, HealthCheckRegistry healthCheckRegistry, TaskManager taskManager) {
 		MaxwellHTTPServerWorker maxwellHTTPServerWorker = new MaxwellHTTPServerWorker(port, metricRegistry, healthCheckRegistry);
 		Thread thread = new Thread(maxwellHTTPServerWorker);
 
-		context.addTask(maxwellHTTPServerWorker);
+		taskManager.add(maxwellHTTPServerWorker);
 		thread.setUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
 			public void uncaughtException(Thread t, Throwable e) {
 				e.printStackTrace();
